@@ -96,91 +96,94 @@ class Downloader:
         """
         download an track
         """
-
         try:
-            timeout = self.config.get_config_value("downloading", "timeout")
 
-            if timeout > 0:
-                print(f"[download_track] Sleeping for {timeout} seconds...")
-                time.sleep(timeout)
+            try:
+                timeout = self.config.get_config_value("downloading", "timeout")
 
-        except TypeError:
-            sys.exit(
-                '[download_track] "timeout" from config file must be a number (without quotes).'
+                if timeout > 0:
+                    print(f"[download_track] Sleeping for {timeout} seconds...")
+                    time.sleep(timeout)
+
+            except TypeError:
+                sys.exit(
+                    '[download_track] "timeout" from config file must be a number (without quotes).'
+                )
+
+            track_id = TrackId.from_uri(
+                f"spotify:track:{self.utils.get_id_type_from_url(url)[0]}"
+            )
+            headers = {"Authorization": f"Bearer {self.utils.get_token()}"}
+
+            resp = requests.get(
+                f"https://api.spotify.com/v1/tracks/{self.utils.get_id_type_from_url(url)[0]}",
+                headers=headers,
+                timeout=10,
+            ).json()
+
+            artist = resp["artists"][0]["name"]  # artist
+            track_title = resp["name"]  # title
+            album_name = resp["album"]["name"]  # album
+            album_release = resp["album"]["release_date"]  # date
+            track_number = resp["track_number"]  # tracknumber
+            cover_image = resp["album"]["images"][0]  # coverart, width, height
+
+            if self.premium_downloads:
+                stream = self.session.content_feeder().load(
+                    track_id, VorbisOnlyAudioQuality(AudioQuality.VERY_HIGH), False, None
+                )
+
+            else:
+                stream = self.session.content_feeder().load(
+                    track_id, VorbisOnlyAudioQuality(AudioQuality.HIGH), False, None
+                )
+
+            filename_format = self.config.get_config_value("downloading", "track_format")
+            filename = filename_format.format(
+                artist=artist,
+                title=track_title,
+                album=album_name,
+                tracknumber=track_number,
+                year=album_release,
             )
 
-        track_id = TrackId.from_uri(
-            f"spotify:track:{self.utils.get_id_type_from_url(url)[0]}"
-        )
-        headers = {"Authorization": f"Bearer {self.utils.get_token()}"}
+            print(f"[download_track] Downloading {track_title} by {artist}")
 
-        resp = requests.get(
-            f"https://api.spotify.com/v1/tracks/{self.utils.get_id_type_from_url(url)[0]}",
-            headers=headers,
-            timeout=10,
-        ).json()
+            path_filename = f"{self.download_path}/{filename}"
 
-        artist = resp["artists"][0]["name"]  # artist
-        track_title = resp["name"]  # title
-        album_name = resp["album"]["name"]  # album
-        album_release = resp["album"]["release_date"]  # date
-        track_number = resp["track_number"]  # tracknumber
-        cover_image = resp["album"]["images"][0]  # coverart, width, height
+            if os.path.exists(path_filename + ".ogg"):
+                print("[download_track] Track exists, skipping")
 
-        if self.premium_downloads:
-            stream = self.session.content_feeder().load(
-                track_id, VorbisOnlyAudioQuality(AudioQuality.VERY_HIGH), False, None
-            )
+            else:
+                directory_path = os.path.dirname(path_filename)
 
-        else:
-            stream = self.session.content_feeder().load(
-                track_id, VorbisOnlyAudioQuality(AudioQuality.HIGH), False, None
-            )
+                if directory_path and not os.path.exists(directory_path):
+                    os.makedirs(directory_path)
 
-        filename_format = self.config.get_config_value("downloading", "track_format")
-        filename = filename_format.format(
-            artist=artist,
-            title=track_title,
-            album=album_name,
-            tracknumber=track_number,
-            year=album_release,
-        )
+                with open(f"{path_filename}.ogg", "wb+") as track_file, tqdm.tqdm(
+                    unit="B",
+                    unit_scale=True,
+                    unit_divisor=1024,
+                    total=stream.input_stream.size,
+                    bar_format="{percentage:3.0f}%|{bar:16}|{n_fmt} / {total_fmt} | {rate_fmt}, ETA {remaining}",
+                ) as progress_bar:
+                    for _ in range(int(stream.input_stream.size / 5000) + 1):
+                        progress_bar.update(
+                            track_file.write(stream.input_stream.stream().read(50000))
+                        )
 
-        print(f"[download_track] Downloading {track_title} by {artist}")
+                if self.set_metadata:
+                    tags = {
+                        "artist": artist,
+                        "title": track_title,
+                        "album": album_name,
+                        "date": album_release,  # .split("-")[0],
+                        "tracknumber": track_number,
+                    }
 
-        path_filename = f"{self.download_path}/{filename}"
-
-        if os.path.exists(path_filename + ".ogg"):
-            print("[download_track] Track exists, skipping")
-
-        else:
-            directory_path = os.path.dirname(path_filename)
-
-            if directory_path and not os.path.exists(directory_path):
-                os.makedirs(directory_path)
-
-            with open(f"{path_filename}.ogg", "wb+") as track_file, tqdm.tqdm(
-                unit="B",
-                unit_scale=True,
-                unit_divisor=1024,
-                total=stream.input_stream.size,
-                bar_format="{percentage:3.0f}%|{bar:16}|{n_fmt} / {total_fmt} | {rate_fmt}, ETA {remaining}",
-            ) as progress_bar:
-                for _ in range(int(stream.input_stream.size / 5000) + 1):
-                    progress_bar.update(
-                        track_file.write(stream.input_stream.stream().read(50000))
-                    )
-
-            if self.set_metadata:
-                tags = {
-                    "artist": artist,
-                    "title": track_title,
-                    "album": album_name,
-                    "date": album_release,  # .split("-")[0],
-                    "tracknumber": track_number,
-                }
-
-                self.utils.set_metadata(tags, cover_image, path_filename)
+                    self.utils.set_metadata(tags, cover_image, path_filename)
+        except:
+            return self.download_track(url)
 
     def download(self, link):
         """
