@@ -11,6 +11,8 @@ from librespot.audio.decoders import AudioQuality, VorbisOnlyAudioQuality
 from config import Config
 from utils import Utils
 
+import json
+
 
 class Downloader:
     """
@@ -34,6 +36,7 @@ class Downloader:
             "downloading", "download_path"
         )
         self.set_metadata = self.config.get_config_value("downloading", "set_metadata")
+        self.alreadyDownloaded = []
 
     def get_track_urls(self, link):
         """
@@ -88,7 +91,11 @@ class Downloader:
         total_tracks = len(tracks)
 
         for count, track in enumerate(tracks):
+            if track in self.alreadyDownloaded:
+                print(f"[download_playlist_or_album]")
             self.download_track(track)
+
+            self.alreadyDownloaded.append(track)
 
             print(f"[download_playlist_or_album] Progress: {count + 1}/{total_tracks}")
 
@@ -182,7 +189,8 @@ class Downloader:
                     }
 
                     self.utils.set_metadata(tags, cover_image, path_filename)
-        except:
+        except json.JSONDecodeError as e:
+            print(e)
             return self.download_track(url)
 
     def download(self, link):

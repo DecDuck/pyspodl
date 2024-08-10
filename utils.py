@@ -55,6 +55,8 @@ class Utils:
                     f"[generate_new_token] Error updating the configuration file: {e}\n\nManually update token from the config.toml file by yourself with: \"{resp['access_token']}\""
                 )
 
+            return resp["access_token"]
+
         try:
             os.execv(sys.argv[0], sys.argv)
 
@@ -70,7 +72,7 @@ class Utils:
             token = self.config.get_config_value("account", "token")
 
         except ConfigError:
-            self.generate_new_token()
+            return self.generate_new_token()
 
         headers = {"Authorization": f"Bearer {token}"}
         resp = requests.get(
@@ -80,7 +82,7 @@ class Utils:
         )
 
         if resp.status_code == 401:
-            self.generate_new_token()
+            return self.generate_new_token()
 
         return token
 
